@@ -1,0 +1,21 @@
+dependencies:
+  heronet/tm1637:
+    component_hash: 58521a0c21cec99898110e7b78e0e4dbba2a2182fd7b737b631fe33b2dd6aea8
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=4.4'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 1.0.2
+  idf:
+    source:
+      type: idf
+    version: 5.5.1
+direct_dependencies:
+- heronet/tm1637
+- idf
+manifest_hash: d704f558dd930679cda162172a10c18770f29b5a51c4a95def112bce3d5eaa9f
+target: esp32c3
+version: 2.0.0
