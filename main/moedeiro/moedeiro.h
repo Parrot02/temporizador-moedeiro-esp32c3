@@ -10,3 +10,4 @@
 #define MOEDEIRO_PIN GPIO_NUM_3
 
 void coin_gpio_init(void *params); 
+void level(void *params);

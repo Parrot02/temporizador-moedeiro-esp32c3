@@ -1,8 +1,7 @@
 #include "moedeiro.h"
 
-#define SAMPLE_PERIOD_US 100            // 100 us = 10 kHz // 100.000
-#define LOW_MIN_US       50000          // 50 ms // 50000
-#define LOW_MIN_SAMPLES  (LOW_MIN_US / SAMPLE_PERIOD_US)
+#define GPIO_INPUT_PIN_SEL  (1ULL << MOEDEIRO_PIN) // Configura o pino 0
+#define ESP_INTR_FLAG_DEFAULT 0
 
 static const char *TAG = "MOEDEIRO";
 
@@ -11,103 +10,69 @@ volatile bool pulseActive = false;
 volatile uint16_t coinCount = 0;
 volatile uint16_t coinDump = 0; 
 
-static bool IRAM_ATTR gptimer_coin_isr(gptimer_handle_t timer,
-                                       const gptimer_alarm_event_data_t *edata,
-                                       void *user_ctx)
-{
-    bool level = gpio_get_level(MOEDEIRO_PIN); // HIGH ou LOW
+TaskHandle_t moedeiroTaskHandle; 
 
-    if (level == 0) { // LOW
-        if (lowSamples < 65000) {
-            lowSamples++;
-        }
-    } else { // HIGH
-        if (pulseActive) {
-            pulseActive = false;
-            lowSamples = 0;
-        }
-    }
+static void IRAM_ATTR gpio_isr_handler(void* arg) {
+    uint32_t gpio_num = (uint32_t) arg;
+    uint64_t last_falling;
+    // Faça algo aqui (ex: enviar notificação para uma task via fila)
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
-    // Quando atingir largura mínima → pulso válido
-    if (!pulseActive && lowSamples >= LOW_MIN_SAMPLES) {
-        pulseActive = true;
-        coinCount++;
-        coinDump++; 
-    }
+    vTaskNotifyGiveFromISR(
+        moedeiroTaskHandle,
+        &xHigherPriorityTaskWoken
+    );
 
-    return true; // manter alarme periódico ativo
-}
-
-static gptimer_handle_t setup_timer_10khz(void)
-{
-    gptimer_handle_t timer = NULL;
-
-    // Configuração básica do timer
-    gptimer_config_t timer_config = {
-        .clk_src = GPTIMER_CLK_SRC_DEFAULT, // 80 MHz no ESP32
-        .direction = GPTIMER_COUNT_UP,
-        .resolution_hz = 1000000, // 1 MHz → 1 tick = 1 µs
-    };
-
-    ESP_ERROR_CHECK(gptimer_new_timer(&timer_config, &timer));
-
-    // Registrar callback (ISR)
-    gptimer_event_callbacks_t cbs = {
-        .on_alarm = gptimer_coin_isr,
-    };
-    ESP_ERROR_CHECK(gptimer_register_event_callbacks(timer, &cbs, NULL));
-
-    // Configurar alarme periódico em 100 µs
-    gptimer_alarm_config_t alarm_config = {
-        .alarm_count = SAMPLE_PERIOD_US, // 100 us
-        .reload_count = 0,
-        .flags.auto_reload_on_alarm = true,
-    };
-    ESP_ERROR_CHECK(gptimer_set_alarm_action(timer, &alarm_config));
-
-    // Habilitar e iniciar
-    ESP_ERROR_CHECK(gptimer_enable(timer));
-    ESP_ERROR_CHECK(gptimer_start(timer));
-
-    ESP_LOGI(TAG, "GPTimer iniciado a %d us", SAMPLE_PERIOD_US);
-
-    return timer;
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
 }
 
 void moedeiro_listener(void *params)
 {
     ESP_LOGI(TAG, "Listener iniciado!");
-    while (1) {
-        if(coinDump != 0){
-            coinDump = 0; 
-            current_moeda += 1; 
-        }
-        if (coinCount >= pulsos) {
-            ESP_LOGI(TAG, "Moeda detectada! Total: %d", coinCount);
-            uart_write_bytes(UART_NUM_1, MOEDA_DETECTADA_STR, strlen(MOEDA_DETECTADA_STR));
-            coinCount = 0; 
-            current_moeda = 0; 
-            moeda = 1; 
-            // TO DO xTaskNotify "RUN TIMER"
-        }
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
+    while (1)
+        {
+            // Espera indefinidamente pela interrupção
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
+            ESP_LOGI(TAG, "Pulso detectado!");
+            uart_write_bytes(UART_NUM_1, MOEDA_DETECTADA_STR, strlen(MOEDA_DETECTADA_STR));
+
+            coinCount++;
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
 }
 
 void coin_gpio_init(void *params)
 {
+    xTaskCreate(moedeiro_listener, "moedeiro_listener", 4096, NULL, 7, &moedeiroTaskHandle);
+    // 1. Configurar os parâmetros do GPIO
     gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << MOEDEIRO_PIN),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,   // típico para moedeiro open-collector
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE
+        .intr_type = GPIO_INTR_NEGEDGE,        // Interrupção por borda de descida (quando o botão é pressionado)
+        .mode = GPIO_MODE_INPUT,               // Modo de entrada
+        .pin_bit_mask = GPIO_INPUT_PIN_SEL,    // Pinos selecionados
+        .pull_up_en = 1,                       // Habilita resistor pull-up interno
+        .pull_down_en = 0                      // Desabilita pull-down
     };
+    
+    // Aplica a configuração
     gpio_config(&io_conf);
-    gptimer_handle_t timer = setup_timer_10khz();
-    xTaskCreate(moedeiro_listener, "moedeiro_listener", 4096, NULL, 7, NULL);
+
+    // 2. Instalar o serviço ISR GPIO
+    gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
+
+    // 3. Adicionar o manipulador (handler) da interrupção para o pino específico
+    gpio_isr_handler_add(MOEDEIRO_PIN, gpio_isr_handler, (void*) MOEDEIRO_PIN);
 
     ESP_LOGI(TAG, "Moedeiro inicializado no pino %d", MOEDEIRO_PIN);
-    vTaskDelete(NULL); 
+
+    while (1) {
+        vTaskDelay(100 / portTICK_PERIOD_MS);
+    }
+}
+
+void level(void *params){
+    while(1){
+        ESP_LOGI(TAG, "Level %d", gpio_get_level(MOEDEIRO_PIN));
+        vTaskDelay(500);
+    }
 }
