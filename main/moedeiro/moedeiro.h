@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_timer.h"
 #include "globals.h"
 
 #define MOEDEIRO_PIN GPIO_NUM_3
