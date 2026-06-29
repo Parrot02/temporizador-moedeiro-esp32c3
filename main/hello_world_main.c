@@ -11,12 +11,12 @@
 #include "temporizador.h"
 #include "globals.h"
 #include "moedeiro.h"
+#include "display.h"
 #include "esp_flash.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include <esp_err.h>
 
-TaskHandle_t timer; 
 QueueHandle_t uart_queue;
 
 const int uart_buffer_size = (1024 * 2);
@@ -37,5 +37,7 @@ void app_main(void)
     ESP_ERROR_CHECK(uart_set_pin(UART_NUM_1, GPIO_NUM_21, GPIO_NUM_20, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
     xTaskCreate(coin_gpio_init, "coin_gpio_init", 4096, NULL, 5, NULL);
     xTaskCreate(start_timer, "start_timer", 4096, NULL, 5, &timer);
+    xTaskCreate(somar, "somar", 4096, NULL, 5, &somarDisplay);
+    display_init();
     uart_write_bytes(UART_NUM_1, WELCOME_STR, strlen(WELCOME_STR));
 }

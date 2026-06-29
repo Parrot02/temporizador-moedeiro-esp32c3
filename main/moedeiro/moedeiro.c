@@ -64,9 +64,23 @@ void moedeiro_listener(void *params)
 
             ESP_LOGI(TAG, "Pulso detectado!");
             uart_write_bytes(UART_NUM_1, MOEDA_DETECTADA_STR, strlen(MOEDA_DETECTADA_STR));
+            current_moeda += 1; 
+
+            xTaskNotifyGive(somarDisplay);
 
             coinCount++;
             lastPulse = now;
+
+            if(coinCount >= pulsos){
+                if(running_timer == 0){
+                    xTaskNotify(timer, TIMER_START, eSetBits);
+                } else {
+                    xTaskNotify(timer, TIMER_INCREASE, eSetBits);
+                }
+                    uart_write_bytes(UART_NUM_1, TIME_RUNNING_STR, strlen(TIME_RUNNING_STR));
+                    coinCount = 0; 
+                    current_moeda = 0; 
+            }
             // vTaskDelay(pdMS_TO_TICKS(100));
         }
 }

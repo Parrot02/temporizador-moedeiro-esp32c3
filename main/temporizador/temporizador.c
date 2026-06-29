@@ -26,27 +26,37 @@ void start_timer(void *params){
         if (evt & TIMER_START) {
             state = TIMER_START_DEF;
             tempo_restante = timer_seconds;
+            running_timer = 1; 
             // Implementação do temporizador
             tm1637_clear(display);
             tm1637_set_brightness(display, 7, true);
 
-            uint32_t last_time = esp_timer_get_time() / 1000;
-
             while(tempo_restante > 0){
-                if(esp_timer_get_time() / 1000 >= 1000){
-                    tempo_restante--;
-                    last_time += 1000;
+                uint32_t evt;
 
-                    int min = tempo_restante / 60; 
-                    int sec = tempo_restante % 60;
+                if (xTaskNotifyWait(0, ULONG_MAX, &evt, 0) == pdTRUE) {
 
-                    tm1637_show_number(display, sec, true, 4, 0);
-                    tm1637_show_number(display, min, false, 1, 1);
-                    vTaskDelay(pdMS_TO_TICKS(1000));
+                    if (evt & TIMER_INCREASE)
+                        tempo_restante += timer_seconds;
+
+                    if (evt & TIMER_IDLE) {
+                        tempo_restante = 0;
+                        break;
+                    }
                 }
+
+                tempo_restante--;
+
+                int min = tempo_restante / 60; 
+                int sec = tempo_restante % 60;
+
+                tm1637_show_number(display, sec, true, 4, 0);
+                tm1637_show_number(display, min, false, 1, 1);
+                vTaskDelay(pdMS_TO_TICKS(1000));
             }
             
             tempo_restante = timer_seconds; 
+            running_timer = 0; 
             
             tm1637_clear(display);
             tm1637_set_brightness(display, 0, true);

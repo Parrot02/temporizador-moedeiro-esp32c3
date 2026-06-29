@@ -19,6 +19,12 @@ void display_init(){
 }
 
 void somar(void *params){
-    tm1637_show_number(display, current_moeda, true, 4, 0);
-    vTaskDelete(NULL); 
+    while (1)
+        {
+            // Bloqueia a task até receber uma notificação
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+            // Executa somente após a notificação
+            tm1637_show_number(display, current_moeda, true, 4, 0);
+        }
 }
